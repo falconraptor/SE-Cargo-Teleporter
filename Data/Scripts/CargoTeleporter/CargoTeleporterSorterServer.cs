@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Sandbox.Common.ObjectBuilders;
 using Sandbox.ModAPI;
+using Sandbox.ModAPI.Ingame;
 using VRage.Game.Components;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
@@ -42,80 +43,25 @@ namespace CargoTeleporter
             Logging.close();
         }
 
-        private static T GetFirstFatBlockAs<T>(IEnumerable<IMySlimBlock> list) where T : class
-        {
-            return list.First(x => x.FatBlock is T).FatBlock as T;
-        }
-
-        //Pulled out to simplify reading the update function
-        private void ParseName(out string name, out string gridName, out bool toMode)
-        {
-            name = "";
-            gridName = "";
-            toMode = true;
-            if (_cargoTeleporter.DisplayNameText.Contains("[G:"))
-            {
-                var start = _cargoTeleporter.DisplayNameText.IndexOf("[G:") + 3;
-                var end = _cargoTeleporter.DisplayNameText.IndexOf("]", start);
-                gridName = _cargoTeleporter.DisplayNameText.Substring(start, end - start);
-            }
-
-            if (_cargoTeleporter.DisplayNameText.Contains("<G:"))
-            {
-                var start = _cargoTeleporter.DisplayNameText.IndexOf("<G:") + 3;
-                var end = _cargoTeleporter.DisplayNameText.IndexOf(">", start);
-                gridName = _cargoTeleporter.DisplayNameText.Substring(start, end - start);
-            }
-
-            if (_cargoTeleporter.DisplayNameText.Contains("[T:"))
-            {
-                var start = _cargoTeleporter.DisplayNameText.IndexOf("[T:") + 3;
-                var end = _cargoTeleporter.DisplayNameText.IndexOf("]", start);
-                name = _cargoTeleporter.DisplayNameText.Substring(start, end - start);
-            }
-            else if (_cargoTeleporter.DisplayNameText.Contains("[F:"))
-            {
-                var start = _cargoTeleporter.DisplayNameText.IndexOf("[F:") + 3;
-                var end = _cargoTeleporter.DisplayNameText.IndexOf("]", start);
-                name = _cargoTeleporter.DisplayNameText.Substring(start, end - start);
-                toMode = false;
-            }
-
-            if (_cargoTeleporter.DisplayNameText.Contains("<T:"))
-            {
-                var start = _cargoTeleporter.DisplayNameText.IndexOf("<T:") + 3;
-                var end = _cargoTeleporter.DisplayNameText.IndexOf(">", start);
-                name = _cargoTeleporter.DisplayNameText.Substring(start, end - start);
-            }
-            else if (_cargoTeleporter.DisplayNameText.Contains("<F:"))
-            {
-                var start = _cargoTeleporter.DisplayNameText.IndexOf("<F:") + 3;
-                var end = _cargoTeleporter.DisplayNameText.IndexOf(">", start);
-                name = _cargoTeleporter.DisplayNameText.Substring(start, end - start);
-                toMode = false;
-            }
-        }
-
         public override void UpdateBeforeSimulation100()
         {
             base.UpdateBeforeSimulation100();
             if (_cargoTeleporter == null) return;
             try
             {
-                if (!(_cargoTeleporter as IMyFunctionalBlock).Enabled)
+                if (!((IMyFunctionalBlock) _cargoTeleporter).Enabled)
                 {
-                    if (constantStuff.debugSorter)
-                        Logging.WriteLine(_cargoTeleporter.DisplayNameText + " is powered off");
+                    Write(_cargoTeleporter.DisplayNameText + " is powered off");
                     return;
                 }
 
-                if (constantStuff.debugSorter) Logging.WriteLine(_cargoTeleporter.DisplayNameText + " is powered on");
+                Write(_cargoTeleporter.DisplayNameText + " is powered on");
             }
             catch (Exception ex)
             {
                 Logging.WriteLine(ex.Message);
             }
-
+            
             try
             {
                 if (MyAPIGateway.Session == null)
@@ -123,49 +69,49 @@ namespace CargoTeleporter
                     if (constantStuff.debugSorter) Logging.WriteLine("MyAPIGateway.Session is null");
                     return;
                 }
+                
+                Write("MainRun");
+                if (_cargoTeleporter.BlockDefinition.SubtypeName != "LargeBlockSmallSorterTeleport" &&
+                    _cargoTeleporter.BlockDefinition.SubtypeName != "SmallBlockMediumSorterTeleport") return;
+                
+                ParseName(out var name, out var gridName, out var toMode);
+                    
+                if (_inventory == null) _inventory = _cargoTeleporter.GetInventory();
+                if (toMode && _inventory.Empty()) return;
+                    
+                Write("GetBlocks");
+                var fatBlocks = new List<IMySlimBlock>();
+                _cargoTeleporter.CubeGrid.GetBlocks(fatBlocks, x => x?.FatBlock != null);
+                var cubeBlocks = fatBlocks.Cast<IMyCubeBlock>();
 
-                if (constantStuff.debugSorter) Logging.WriteLine("MainRun");
-                if (_inventory == null) _inventory = _cargoTeleporter.GetInventory(0);
-                if (_cargoTeleporter.BlockDefinition.SubtypeName == "LargeBlockSmallSorterTeleport" ||
-                    _cargoTeleporter.BlockDefinition.SubtypeName == "SmallBlockMediumSorterTeleport")
+                if (name.Length < 2)
                 {
-                    ParseName(out var name, out var gridName, out var toMode);
-
-                    if (toMode && _inventory.Empty()) return;
-                    //long playerId = CargoTeleporter.OwnerId;
-                    //Get Antenna
-
-                    if (constantStuff.debugSorter) Logging.WriteLine("GetBlocks");
-                    var fatBlocksInGrid = new List<IMySlimBlock>();
-                    // Gets all slim blocks that have a non-null fatblock
-                    _cargoTeleporter.CubeGrid.GetBlocks(fatBlocksInGrid, x => x?.FatBlock != null);
-
-                    //Gets the first RadioAntenna
-                    if (constantStuff.debugSorter) Logging.WriteLine("IMyRadioAntenna");
-                    var radioAntenna = GetFirstFatBlockAs<IMyRadioAntenna>(fatBlocksInGrid);
-                    if (radioAntenna == null) Logging.WriteLine("radioAntenna null");
-
-                    //Gets the first LaserAntenna
-                    if (constantStuff.debugSorter) Logging.WriteLine("IMyLaserAntenna");
-                    var laserAntenna = GetFirstFatBlockAs<IMyLaserAntenna>(fatBlocksInGrid);
-                    if (laserAntenna == null) Logging.WriteLine("laserAntenna null");
-
-                    //Gets the first RadioAntenna
-                    if (radioAntenna != null)
-                    {
-                        if (constantStuff.debugSorter) Logging.WriteLine("Updating using Radio");
-                        DoRadioUpdate(name, gridName, toMode, radioAntenna);
-                    }
-                    else if (laserAntenna != null)
-                    {
-                        if (constantStuff.debugSorter) Logging.WriteLine("Updating using Radio");
-                        DoLaserUpdate(name, gridName, toMode, laserAntenna);
-                    }
-                    else if (constantStuff.debugSorter)
-                    {
-                        Logging.WriteLine("Cannot update, all Antenna null");
-                    }
+                    Write("Name too small");
+                    return;
                 }
+
+                IMyEntity target = null;
+
+                if (gridName.Length > 2 && gridName != _cargoTeleporter.CubeGrid.CustomName)
+                {
+                    GetTarget(gridName, name, _cargoTeleporter.CubeGrid, out target);
+                }
+                else
+                {
+                    target = cubeBlocks.First(x => x?.DisplayNameText == name && OwnershipUtils.isSameFactionOrOwner(_cargoTeleporter, x));
+                }
+
+                if (target == null)
+                {
+                    Write("target null");
+                    return;
+                }
+
+                var targetInventory = target.GetInventory();
+                if (!targetInventory.IsFull && toMode)
+                    targetInventory.TransferItemFrom(_inventory, 0, null, true, null, false);
+                else if (!targetInventory.Empty() && !_inventory.IsFull && !toMode)
+                    _inventory.TransferItemFrom(targetInventory, 0, null, true, null, false);
             }
             catch (Exception ex)
             {
@@ -173,152 +119,74 @@ namespace CargoTeleporter
             }
         }
 
-        private void DoLaserUpdate(string name, string gridName, bool toMode, IMyLaserAntenna radioAntenna)
-        {
-            throw new NotImplementedException();
-        }
-
-        private void DoRadioUpdate(string name, string gridName, bool toMode, IMyRadioAntenna radioAntenna)
-        {
-            if (constantStuff.debugSorter) Logging.WriteLine("VRageMath");
-            var radioRangeSphere = new BoundingSphereD(radioAntenna.GetPosition(), radioAntenna.Radius);
-            if (constantStuff.debugSorter) Logging.WriteLine("VRageMath2");
-
-            if (constantStuff.debugSorter) Logging.WriteLine("" + _cargoTeleporter.OwnerId);
-            try
-            {
-                if (constantStuff.debugSorter) Logging.WriteLine("Entities");
-                var entities = MyAPIGateway.Entities.GetEntitiesInSphere(ref radioRangeSphere)
-                    .Where(x => x is IMyCubeBlock).Cast<IMyCubeBlock>().ToList();
-                var gridBlocks = new HashSet<IMyCubeBlock>(entities);
-                if (constantStuff.debugSorter) Logging.WriteLine("PostGrids");
-                if (constantStuff.debugSorter) Logging.WriteLine("entities " + entities.Count);
-                if (constantStuff.debugSorter) Logging.WriteLine("gridBlocks " + gridBlocks.Count);
-                var startBlockLoop = DateTime.Now;
-
-                if (!_cargoTeleporter.DisplayNameText.Contains("-Off-"))
-                {
-                    var compStart = DateTime.Now;
-
-                    if (name.Length > 2)
-                    {
-                        if (constantStuff.debugSorter) Logging.WriteLine("PostName " + name);
-                        IMyEntity targetEnt = null;
-                        try
-                        {
-                            targetEnt = gridBlocks.First(x =>
-                                x.DisplayNameText != null && x.DisplayNameText == name &&
-                                OwnershipUtils.isSameFactionOrOwner(_cargoTeleporter, x));
-                        }
-                        catch (InvalidOperationException ex)
-                        {
-                            if (gridName.Length > 2)
-                                targetEnt = BeginRecursiveSearch(radioAntenna, gridName, name);
-                        }
-
-                        if (targetEnt == null) Logging.WriteLine("targetEnt null");
-                        if (targetEnt != null && targetEnt is IMyCubeBlock)
-                        {
-                            var inventoryTO = targetEnt.GetInventory(0);
-                            if (!inventoryTO.IsFull && !_inventory.Empty() && toMode)
-                                inventoryTO.TransferItemFrom(_inventory, 0, null, true, _inventory.GetItems()[0].Amount,
-                                    false);
-                            else if (!inventoryTO.Empty() && !_inventory.IsFull && !toMode)
-                                _inventory.TransferItemFrom(inventoryTO, 0, null, true, inventoryTO.GetItems()[0].Amount, false);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logging.WriteLine(ex.Message);
-            }
-        }
-
-        private IMyEntity BeginRecursiveSearch(IMyRadioAntenna ant, string GridName, string blockName)
-        {
-            var GridsToProcess = new List<IMyCubeGrid>();
-            var GridsProcessed = new List<IMyCubeGrid>();
-            if (constantStuff.debugSorter) write("Going Deep for: " + GridName);
-
-            var sphere = new BoundingSphereD(ant.GetPosition(), ant.Radius);
-            foreach (var grid in MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid)
-                .ToList()) GridsToProcess.Add(grid as IMyCubeGrid);
-            if (constantStuff.debugSorter) write("Inital Population: " + GridsToProcess.Count);
-            IMyEntity targetEnt = null;
-
-            while (targetEnt == null && GridsToProcess.Count > 0)
-            {
-                var processing = GridsToProcess[0];
-                if (constantStuff.debugSorter) write("Processing Grid: " + processing.DisplayName);
-                if (processing.DisplayName == GridName)
-                {
-                    //FOUND IT!
-                    if (constantStuff.debugSorter) write("Found Grid");
-                    var gridBlocks = new List<IMySlimBlock>();
-                    processing.GetBlocks(gridBlocks, x => x.FatBlock != null);
-                    var Blocks = new HashSet<IMyCubeBlock>(gridBlocks.Cast<IMyCubeBlock>());
-                    try
-                    {
-                        targetEnt = Blocks.First(x =>
-                            x != null && x.DisplayNameText != null && x.DisplayNameText == blockName);
-                        if (targetEnt == null)
-                        {
-                            write("WARNING! TARGET ENT IS NULL!!!!!!!");
-                        }
-                        else
-                        {
-                            if (constantStuff.debugSorter) write("TargetEnt is: " + targetEnt);
-                        }
-
-                        return targetEnt;
-                    }
-                    catch (InvalidOperationException ex)
-                    {
-                        //There was nothing, Return as we failed, due to no reciever on grid.
-                        return null;
-                    }
-                }
-
-                try
-                {
-                    if (processing.SmallOwners.Contains(ant.OwnerId) ||
-                        OwnershipUtils.isSameFactionOrOwner(processing, ant as IMyCubeBlock))
-                    {
-                        //NOT FOUND, FIND MORE ANTENNAS PLOX
-                        var slimAnts = new List<IMySlimBlock>();
-                        processing.GetBlocks(slimAnts, x => x is IMySlimBlock && x.FatBlock is IMyRadioAntenna);
-                        foreach (var block in slimAnts)
-                        {
-                            sphere = new BoundingSphereD(block.FatBlock.GetPosition(),
-                                (block.FatBlock as IMyRadioAntenna).Radius);
-
-                            foreach (var grid in MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere)
-                                .Where(x => x is IMyCubeGrid).ToList())
-                                if (!GridsProcessed.Contains(grid) && !GridsToProcess.Contains(grid))
-                                {
-                                    if (constantStuff.debugSorter)
-                                        write("Adding " + (grid as IMyCubeGrid).DisplayName + " to GridsToProcess");
-                                    GridsToProcess.Add(grid as IMyCubeGrid);
-                                }
-                        }
-                    }
-                }
-                catch
-                {
-                    // ignored
-                }
-
-                GridsProcessed.Add(processing);
-                GridsToProcess.Remove(processing);
-            }
-
-            return null;
-        }
-
-        private void write(string v)
+        private void Write(string v)
         {
             if (constantStuff.debugSorter) Logging.WriteLine(v);
+        }
+
+        private void ParseName(out string name, out string gridName, out bool toMode)
+        {
+            name = "";
+            gridName = "";
+            toMode = true;
+
+            if (_cargoTeleporter.DisplayNameText.Contains("G:"))
+            {
+                var start = _cargoTeleporter.DisplayNameText.IndexOf("G:") + 2;
+                gridName = _cargoTeleporter.DisplayNameText.Substring(start, _cargoTeleporter.DisplayNameText.IndexOf(_cargoTeleporter.DisplayNameText[start - 3], start) - start);
+            }
+
+            if (_cargoTeleporter.DisplayNameText.Contains("T:"))
+            {
+                var start = _cargoTeleporter.DisplayNameText.IndexOf("T:") + 2;
+                name = _cargoTeleporter.DisplayNameText.Substring(start, _cargoTeleporter.DisplayNameText.IndexOf(_cargoTeleporter.DisplayNameText[start - 3], start) - start);
+            }
+            else if (_cargoTeleporter.DisplayNameText.Contains("F:"))
+            {
+                var start = _cargoTeleporter.DisplayNameText.IndexOf("F:") + 2;
+                name = _cargoTeleporter.DisplayNameText.Substring(start, _cargoTeleporter.DisplayNameText.IndexOf(_cargoTeleporter.DisplayNameText[start - 3], start) - start);
+                toMode = false;
+            }
+        }
+
+        private Void GetTarget(string gridName, string name, IMyCubeGrid startingGrid, out IMyEntity target)
+        {
+            var gridsToProcess = new List<IMyCubeGrid>();
+            var gridsProcessed = new HashSet<IMyCubeGrid>();
+            target = null;
+            
+            gridsToProcess.Add(startingGrid);
+
+            while (target == null && gridsToProcess.Count > 0)
+            {
+                var processing = gridsToProcess.Pop();
+                Write("Processing Grid: " + processing.DisplayName);
+                
+                var fatBlocks = new List<IMySlimBlock>();
+                processing.GetBlocks(fatBlocks, x => x?.FatBlock != null);
+                var gridBlocks = fatBlocks.Cast<IMyCubeBlock>();
+
+                if (processing.DisplayName == gridName)
+                {
+                    
+                    target = gridBlocks.First(x => x?.DisplayNameText == name);
+                    break;
+                }
+                
+                foreach (var antenna in gridBlocks.Where(x => x is IMyRadioAntenna && OwnershipUtils.isSameFactionOrOwner(processing, x)).Cast<IMyRadioAntenna>())
+                {
+                    var sphere = new BoundingSphereD(antenna.GetPosition(), antenna.Radius);
+                    gridsToProcess.AddRange(MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).Cast<IMyCubeGrid>().Where(x => !gridsProcessed.Contains(x) && !gridsToProcess.Contains(x)));
+                }
+
+                foreach (var antenna in gridBlocks.Where(x => x is IMyLaserAntenna && OwnershipUtils.isSameFactionOrOwner(processing, x)).Cast<IMyLaserAntenna>().Where(x => x.Status == MyLaserAntennaStatus.Connected))
+                {
+                    var sphere = new BoundingSphereD(antenna.TargetCoords, 5);
+                    gridsToProcess.AddRange(MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).Cast<IMyCubeGrid>().Where(x => !gridsProcessed.Contains(x) && !gridsToProcess.Contains(x)));
+                }
+
+                gridsProcessed.Add(processing);
+            }
         }
     }
 }
