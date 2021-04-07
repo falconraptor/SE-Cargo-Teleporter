@@ -1,58 +1,40 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-
 using Sandbox.Common.ObjectBuilders;
-using Sandbox.Common.ObjectBuilders.Definitions;
-using Sandbox.Definitions;
-using Sandbox.Game;
-using Sandbox.Game.Entities;
-using Sandbox.Game.EntityComponents;
-using Sandbox.Game.Lights;
 using Sandbox.ModAPI;
-using Sandbox.ModAPI.Weapons;
-using SpaceEngineers.Game.ModAPI;
-using System.Timers;
-using VRage;
-using VRage.Collections;
-using VRage.Game;
+using Sandbox.ModAPI.Ingame;
 using VRage.Game.Components;
-using VRage.Game.Entity;
 using VRage.Game.ModAPI;
-using VRage.Game.ModAPI.Interfaces;
-using VRage.Game.ObjectBuilders;
-using VRage.ObjectBuilders;
-using VRage.Library.Utils;
 using VRage.ModAPI;
-using VRage.Utils;
-
-using Sandbox.ModAPI.Interfaces.Terminal;
-using Sandbox.Game.Entities.Inventory;
-
+using VRage.ObjectBuilders;
+using VRageMath;
 using IMyFunctionalBlock = Sandbox.ModAPI.IMyFunctionalBlock;
-using IMyLaserAntenna = Sandbox.ModAPI.IMyLaserAntenna;
-using IMyTerminalBlock = Sandbox.ModAPI.IMyTerminalBlock;
+using IMyLaserAntenna = Sandbox.ModAPI.Ingame.IMyLaserAntenna;
+using IMyRadioAntenna = Sandbox.ModAPI.Ingame.IMyRadioAntenna;
 
 namespace CargoTeleporter
 {
-    [MyEntityComponentDescriptor(typeof(MyObjectBuilder_ConveyorSorter), false, new string[] { "LargeBlockSmallSorterTeleport", "SmallBlockMediumSorterTeleport" })]
+    [MyEntityComponentDescriptor(typeof(MyObjectBuilder_ConveyorSorter), false, "LargeBlockSmallSorterTeleport",
+        "SmallBlockMediumSorterTeleport")]
     public class CargoTeleporterSorterServer : MyGameLogicComponent
     {
-        MyObjectBuilder_EntityBase ObjectBuilder;
-        IMyCubeBlock CargoTeleporter = null;
-        VRage.Game.ModAPI.IMyInventory inventory = null;
+        private IMyCubeBlock _cargoTeleporter;
+        private IMyInventory _inventory;
+        private MyObjectBuilder_EntityBase _objectBuilder;
+
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
         {
             Entity.NeedsUpdate |= MyEntityUpdateEnum.EACH_100TH_FRAME;
             NeedsUpdate |= MyEntityUpdateEnum.EACH_100TH_FRAME;
-            ObjectBuilder = objectBuilder;
-            CargoTeleporter = Entity as IMyCubeBlock;
+            _objectBuilder = objectBuilder;
+            _cargoTeleporter = Entity as IMyCubeBlock;
             base.Init(objectBuilder);
         }
 
         public override MyObjectBuilder_EntityBase GetObjectBuilder(bool copy = false)
         {
-            return copy ? ObjectBuilder.Clone() as MyObjectBuilder_EntityBase : ObjectBuilder;
+            return copy ? _objectBuilder.Clone() as MyObjectBuilder_EntityBase : _objectBuilder;
         }
 
         public override void Close()
@@ -61,55 +43,12 @@ namespace CargoTeleporter
             Logging.close();
         }
 
-        public override void UpdateAfterSimulation()
-        {
-            base.UpdateAfterSimulation();
-        }
-        public override void UpdateAfterSimulation10()
-        {
-            base.UpdateAfterSimulation10();
-        }
-        public override void UpdateAfterSimulation100()
-        {
-            base.UpdateAfterSimulation100();
-        }
-        public override void UpdateBeforeSimulation()
-        {
-            base.UpdateBeforeSimulation();
-        }
-        public override void UpdateBeforeSimulation10()
-        {
-            base.UpdateBeforeSimulation10();
-        }
-        public override void UpdateOnceBeforeFrame()
-        {
-            base.UpdateOnceBeforeFrame();
-        }
-        public override void UpdatingStopped()
-        {
-            base.UpdatingStopped();
-        }
-
         public override void UpdateBeforeSimulation100()
         {
             base.UpdateBeforeSimulation100();
-            if (CargoTeleporter == null) return;
-            try
-            {
-                if (!(CargoTeleporter as IMyFunctionalBlock).Enabled)
-                {
-                    if (constantStuff.debugSorter) Logging.WriteLine(CargoTeleporter.DisplayNameText + " is powered off");
-                    return;
-                }
-                else
-                {
-                    if (constantStuff.debugSorter) Logging.WriteLine(CargoTeleporter.DisplayNameText + " is powered on");
-                }
-            }
-            catch (Exception ex)
-            {
-                Logging.WriteLine(ex.Message);
-            }
+            if (_cargoTeleporter == null) return;
+            if (!((IMyFunctionalBlock) _cargoTeleporter).Enabled) return;
+
             try
             {
                 if (MyAPIGateway.Session == null)
@@ -117,225 +56,146 @@ namespace CargoTeleporter
                     if (constantStuff.debugSorter) Logging.WriteLine("MyAPIGateway.Session is null");
                     return;
                 }
-                if (constantStuff.debugSorter) Logging.WriteLine("MainRun");
-                if (inventory == null) inventory = CargoTeleporter.GetInventory(0);
-                if (CargoTeleporter.BlockDefinition.SubtypeName == "LargeBlockSmallSorterTeleport" || CargoTeleporter.BlockDefinition.SubtypeName == "SmallBlockMediumSorterTeleport")
+                
+                Write("MainRun");
+                if (_cargoTeleporter.BlockDefinition.SubtypeName != "LargeBlockSmallSorterTeleport" &&
+                    _cargoTeleporter.BlockDefinition.SubtypeName != "SmallBlockMediumSorterTeleport") return;
+
+                var name = "";
+                var gridName = "";
+                var toMode = false;
+                ParseName(ref name, ref gridName, ref toMode);
+                    
+                if (_inventory == null) _inventory = _cargoTeleporter.GetInventory();
+                if (toMode && _inventory.Empty()) return;
+                    
+                Write("GetBlocks");
+                var fatBlocks = new List<IMySlimBlock>();
+                _cargoTeleporter.CubeGrid.GetBlocks(fatBlocks, x => x?.FatBlock != null);
+                var cubeBlocks = fatBlocks.ConvertAll(x => x.FatBlock);
+
+                if (name.Length < 2)
                 {
-
-                    string name = "";
-                    string gridName = "";
-                    bool toMode = true;
-                    if (CargoTeleporter.DisplayNameText.Contains("[G:"))
-                    {
-                        int start = CargoTeleporter.DisplayNameText.IndexOf("[G:") + 3;
-                        int end = CargoTeleporter.DisplayNameText.IndexOf("]", start);
-                        gridName = CargoTeleporter.DisplayNameText.Substring(start, end - start);
-                    }
-                    if (CargoTeleporter.DisplayNameText.Contains("<G:"))
-                    {
-                        int start = CargoTeleporter.DisplayNameText.IndexOf("<G:") + 3;
-                        int end = CargoTeleporter.DisplayNameText.IndexOf(">", start);
-                        gridName = CargoTeleporter.DisplayNameText.Substring(start, end - start);
-                    }
-                    if (CargoTeleporter.DisplayNameText.Contains("[T:"))
-                    {
-                        int start = CargoTeleporter.DisplayNameText.IndexOf("[T:") + 3;
-                        int end = CargoTeleporter.DisplayNameText.IndexOf("]", start);
-                        name = CargoTeleporter.DisplayNameText.Substring(start, end - start);
-                    }
-                    else if (CargoTeleporter.DisplayNameText.Contains("[F:"))
-                    {
-                        int start = CargoTeleporter.DisplayNameText.IndexOf("[F:") + 3;
-                        int end = CargoTeleporter.DisplayNameText.IndexOf("]", start);
-                        name = CargoTeleporter.DisplayNameText.Substring(start, end - start);
-                        toMode = false;
-                    }
-                    if (CargoTeleporter.DisplayNameText.Contains("<T:"))
-                    {
-                        int start = CargoTeleporter.DisplayNameText.IndexOf("<T:") + 3;
-                        int end = CargoTeleporter.DisplayNameText.IndexOf(">", start);
-                        name = CargoTeleporter.DisplayNameText.Substring(start, end - start);
-                    }
-                    else if (CargoTeleporter.DisplayNameText.Contains("<F:"))
-                    {
-                        int start = CargoTeleporter.DisplayNameText.IndexOf("<F:") + 3;
-                        int end = CargoTeleporter.DisplayNameText.IndexOf(">", start);
-                        name = CargoTeleporter.DisplayNameText.Substring(start, end - start);
-                        toMode = false;
-                    }
-
-                    if (toMode && inventory.Empty()) return;
-                    //long playerId = CargoTeleporter.OwnerId;
-                    //Get Antenna
-                    Sandbox.ModAPI.Ingame.IMyRadioAntenna ant = null;
-
-                    if (constantStuff.debugSorter) Logging.WriteLine("GetBlocks");
-
-                    List<IMySlimBlock> Blocks = new List<IMySlimBlock>();
-
-                    List<IMySlimBlock> slimAnts = new List<IMySlimBlock>();
-                    CargoTeleporter.CubeGrid.GetBlocks(slimAnts, x => x is IMySlimBlock);
-                    foreach (IMySlimBlock block in slimAnts)
-                    {
-                        if (block.FatBlock != null)
-                        {
-                            Blocks.Add(block);
-                        }
-                    }
-
-                    IMyEntity targetEntAnts = null;
-                    targetEntAnts = Blocks.Where(x => x.FatBlock != null && x.FatBlock is Sandbox.ModAPI.Ingame.IMyRadioAntenna).First().FatBlock;
-                    if (targetEntAnts == null) Logging.WriteLine("targetEnt null");
-
-                    if (constantStuff.debugSorter) Logging.WriteLine("IMyRadioAntenna");
-                    ant = targetEntAnts as Sandbox.ModAPI.Ingame.IMyRadioAntenna;
-
-                    if (constantStuff.debugSorter) Logging.WriteLine("VRageMath");
-                    VRageMath.BoundingSphereD sphere = new VRageMath.BoundingSphereD(ant.GetPosition(), ant.Radius);
-                    if (constantStuff.debugSorter) Logging.WriteLine("VRageMath2");
-
-                    if (constantStuff.debugSorter) Logging.WriteLine("" + CargoTeleporter.OwnerId);
-                    try
-                    {
-                        List<IMyEntity> entities = MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeBlock).ToList();
-                        
-                        if (constantStuff.debugSorter) Logging.WriteLine("Entitys");
-                        HashSet<IMyCubeBlock> gridBlocks = new HashSet<IMyCubeBlock>();
-                        foreach (IMyCubeBlock slim in entities)
-                        {
-                            gridBlocks.Add(slim);
-                        }
-                        if (constantStuff.debugSorter) Logging.WriteLine("PostGrids");
-                        if (constantStuff.debugSorter) Logging.WriteLine("entities " + entities.Count);
-                        if (constantStuff.debugSorter) Logging.WriteLine("gridBlocks " + gridBlocks.Count);
-                        DateTime startBlockLoop = DateTime.Now;
-
-                        if (!CargoTeleporter.DisplayNameText.Contains("-Off-"))
-                        {
-
-                            DateTime compStart = DateTime.Now;
-
-                            if (name.Length > 2)
-                            {
-                                if (constantStuff.debugSorter) Logging.WriteLine("PostName " + name);
-                                IMyEntity targetEnt = null;
-                                try
-                                {
-                                    targetEnt = gridBlocks.Where(x => x != null && x.DisplayNameText != null && x.DisplayNameText == name && OwnershipUtils.isSameFactionOrOwner(CargoTeleporter, x)).First();
-                                }
-                                catch (InvalidOperationException ex)
-                                {
-                                    if (gridName.Length > 2)
-                                    targetEnt = BeginRecursiveSearch(targetEnt, ant, gridName, name);
-                                }
-                                if (targetEnt == null) Logging.WriteLine("targetEnt null");
-                                if (targetEnt != null && targetEnt is IMyCubeBlock)
-                                {
-                                    VRage.Game.ModAPI.IMyInventory inventoryTO = targetEnt.GetInventory(0);
-                                    if (!inventoryTO.IsFull && !inventory.Empty() && toMode)
-                                    {
-                                        inventoryTO.TransferItemFrom(inventory, 0, null, true, inventory.GetItems()[0].Amount, false);
-                                    }
-                                    else if (!inventoryTO.Empty() && !inventory.IsFull && !toMode)
-                                    {
-                                        inventory.TransferItemFrom(inventoryTO, 0, null, true, inventoryTO.GetItems()[0].Amount, false);
-                                    }
-                                }
-                            }
-                        }
-
-                    }
-                    catch (Exception ex)
-                    {
-                        Logging.WriteLine(ex.Message);
-                    }
+                    Write("Name too small");
+                    return;
                 }
 
+                IMyEntity target = null;
+
+                if (gridName.Length > 2 && gridName != _cargoTeleporter.CubeGrid.CustomName)
+                {
+                    target = GetTarget(gridName, name, _cargoTeleporter.CubeGrid);
+                }
+                else
+                {
+                    target = cubeBlocks.First(x => x?.DisplayNameText == name && OwnershipUtils.isSameFactionOrOwner(_cargoTeleporter, x));
+                }
+
+                if (target == null)
+                {
+                    Write("target null");
+                    return;
+                }
+
+                var targetInventory = target.GetInventory();
+                if (!targetInventory.IsFull && toMode)
+                    targetInventory.TransferItemFrom(_inventory, 0, null, true, null, false);
+                else if (!targetInventory.Empty() && !_inventory.IsFull && !toMode)
+                    _inventory.TransferItemFrom(targetInventory, 0, null, true, null, false);
             }
             catch (Exception ex)
             {
-                Logging.WriteLine(ex.Message);
+                Logging.WriteLine(ex.ToString());
+                Logging.WriteLine(ex.StackTrace);
             }
-
         }
 
-        private IMyEntity BeginRecursiveSearch(IMyEntity targetEnt, Sandbox.ModAPI.Ingame.IMyRadioAntenna ant, string GridName, string blockName)
-        {
-            List<IMyCubeGrid> GridsToProcess = new List<IMyCubeGrid>();
-            List<IMyCubeGrid> GridsProcessed = new List<IMyCubeGrid>();
-            if (constantStuff.debugSorter) write("Going Deep for: " + GridName);
-
-            VRageMath.BoundingSphereD sphere = new VRageMath.BoundingSphereD(ant.GetPosition(), ant.Radius);
-            foreach (IMyEntity grid in MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).ToList())
-            {
-                GridsToProcess.Add(grid as IMyCubeGrid);
-            }
-            if (constantStuff.debugSorter) write("Inital Population: " + GridsToProcess.Count);
-            targetEnt = null;
-
-            while (targetEnt == null && GridsToProcess.Count > 0)
-            {
-                IMyCubeGrid processing = GridsToProcess[0];
-                if (constantStuff.debugSorter) write("Processing Grid: " + processing.DisplayName);
-                if (processing.DisplayName == GridName)
-                {
-                    //FOUND IT!
-                    if (constantStuff.debugSorter) write("Found Grid");
-                    HashSet<IMyCubeBlock> Blocks = new HashSet<IMyCubeBlock>();
-                    List<IMySlimBlock> gridBlocks = new List<IMySlimBlock>();
-                    processing.GetBlocks(gridBlocks, x => x.FatBlock != null);
-                    foreach (IMySlimBlock slim in gridBlocks)
-                    {
-                        Blocks.Add(slim.FatBlock);
-                    }
-                    try
-                    {
-                        targetEnt = Blocks.Where(x => x != null && x.DisplayNameText != null && x.DisplayNameText == blockName).First();
-                        if (targetEnt == null) write("WARNING! TARGET ENT IS NULL!!!!!!!");
-                        else { if (constantStuff.debugSorter) write("TargetEnt is: " + targetEnt.ToString()); }
-                        return targetEnt;
-                    }
-                    catch (InvalidOperationException ex)
-                    {
-                        //There was nothing, Return as we failed, due to no reciever on grid.
-                        return null;
-                    }
-                }
-
-                try
-                {
-                    if (processing.SmallOwners.Contains(ant.OwnerId) || OwnershipUtils.isSameFactionOrOwner(processing, ant as IMyCubeBlock))
-                    {
-                        //NOT FOUND, FIND MORE ANTENNAS PLOX
-                        List<IMySlimBlock> slimAnts = new List<IMySlimBlock>();
-                        processing.GetBlocks(slimAnts, x => x is IMySlimBlock && x.FatBlock is Sandbox.ModAPI.Ingame.IMyRadioAntenna);
-                        foreach (IMySlimBlock block in slimAnts)
-                        {
-                            sphere = new VRageMath.BoundingSphereD(block.FatBlock.GetPosition(), (block.FatBlock as Sandbox.ModAPI.Ingame.IMyRadioAntenna).Radius);
-
-                            foreach (IMyEntity grid in MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).ToList())
-                            {
-                                if (!(GridsProcessed.Contains(grid)) && !(GridsToProcess.Contains(grid)))
-                                {
-                                    if (constantStuff.debugSorter) write("Adding " + (grid as IMyCubeGrid).DisplayName + " to GridsToProcess");
-                                    GridsToProcess.Add(grid as IMyCubeGrid);
-                                }
-                            }
-                        }
-                    }
-                }
-                catch { }
-                GridsProcessed.Add(processing);
-                GridsToProcess.Remove(processing);
-            }
-
-            return null;
-
-        }
-
-        private void write(string v)
+        private void Write(string v)
         {
             if (constantStuff.debugSorter) Logging.WriteLine(v);
+        }
+
+        private void ParseName(ref string name, ref string gridName, ref bool toMode)
+        {
+            if (_cargoTeleporter.DisplayNameText.Contains("G:"))
+            {
+                var start = _cargoTeleporter.DisplayNameText.IndexOf("G:") + 2;
+                var length = _cargoTeleporter.DisplayNameText.IndexOf(GetSymbol(_cargoTeleporter.DisplayNameText[start - 3]), start) - start;
+                if (length >= 0) gridName = _cargoTeleporter.DisplayNameText.Substring(start, length);
+            }
+
+            if (_cargoTeleporter.DisplayNameText.Contains("T:"))
+            {
+                var start = _cargoTeleporter.DisplayNameText.IndexOf("T:") + 2;
+                var length = _cargoTeleporter.DisplayNameText.IndexOf(GetSymbol(_cargoTeleporter.DisplayNameText[start - 3]), start) - start;
+                if (length >= 0) name = _cargoTeleporter.DisplayNameText.Substring(start, length);
+            }
+            else if (_cargoTeleporter.DisplayNameText.Contains("F:"))
+            {
+                var start = _cargoTeleporter.DisplayNameText.IndexOf("F:") + 2;
+                var length = _cargoTeleporter.DisplayNameText.IndexOf(GetSymbol(_cargoTeleporter.DisplayNameText[start - 3]), start) - start;
+                if (length >= 0) name = _cargoTeleporter.DisplayNameText.Substring(start, length);
+                toMode = false;
+            }
+        }
+
+        private static char GetSymbol(char symbol)
+        {
+            switch (symbol)
+            {
+                case '{':
+                    return '}';
+                case '[':
+                    return ']';
+                case '(':
+                    return ')';
+                case '<':
+                    return '>';
+                default:
+                    return symbol;
+            }
+        }
+
+        private IMyEntity GetTarget(string gridName, string name, IMyCubeGrid startingGrid)
+        {
+            var gridsToProcess = new List<IMyCubeGrid>();
+            var gridsProcessed = new HashSet<IMyCubeGrid>();
+            IMyEntity target = null;
+            
+            gridsToProcess.Add(startingGrid);
+
+            while (target == null && gridsToProcess.Count > 0)
+            {
+                var processing = gridsToProcess.Pop();
+                Write("Processing Grid: " + processing.DisplayName);
+                
+                var fatBlocks = new List<IMySlimBlock>();
+                processing.GetBlocks(fatBlocks, x => x?.FatBlock != null);
+                var gridBlocks = fatBlocks.ConvertAll(x => x.FatBlock);
+
+                if (processing.DisplayName == gridName)
+                {
+                    
+                    target = gridBlocks.First(x => x?.DisplayNameText == name);
+                    break;
+                }
+                
+                foreach (var antenna in gridBlocks.Where(x => x is IMyRadioAntenna && OwnershipUtils.isSameFactionOrOwner(processing, x)).Cast<IMyRadioAntenna>())
+                {
+                    var sphere = new BoundingSphereD(antenna.GetPosition(), antenna.Radius);
+                    gridsToProcess.AddRange(MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).Cast<IMyCubeGrid>().Where(x => !gridsProcessed.Contains(x) && !gridsToProcess.Contains(x)));
+                }
+
+                foreach (var antenna in gridBlocks.Where(x => x is IMyLaserAntenna && OwnershipUtils.isSameFactionOrOwner(processing, x)).Cast<IMyLaserAntenna>().Where(x => x.Status == MyLaserAntennaStatus.Connected))
+                {
+                    var sphere = new BoundingSphereD(antenna.TargetCoords, 5);
+                    gridsToProcess.AddRange(MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).Cast<IMyCubeGrid>().Where(x => !gridsProcessed.Contains(x) && !gridsToProcess.Contains(x)));
+                }
+
+                gridsProcessed.Add(processing);
+            }
+
+            return target;
         }
     }
 }
