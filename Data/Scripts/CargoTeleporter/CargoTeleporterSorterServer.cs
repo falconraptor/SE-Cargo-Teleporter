@@ -47,21 +47,8 @@ namespace CargoTeleporter
         {
             base.UpdateBeforeSimulation100();
             if (_cargoTeleporter == null) return;
-            try
-            {
-                if (!((IMyFunctionalBlock) _cargoTeleporter).Enabled)
-                {
-                    Write(_cargoTeleporter.DisplayNameText + " is powered off");
-                    return;
-                }
+            if (!((IMyFunctionalBlock) _cargoTeleporter).Enabled) return;
 
-                Write(_cargoTeleporter.DisplayNameText + " is powered on");
-            }
-            catch (Exception ex)
-            {
-                Logging.WriteLine(ex.Message);
-            }
-            
             try
             {
                 if (MyAPIGateway.Session == null)
@@ -73,8 +60,11 @@ namespace CargoTeleporter
                 Write("MainRun");
                 if (_cargoTeleporter.BlockDefinition.SubtypeName != "LargeBlockSmallSorterTeleport" &&
                     _cargoTeleporter.BlockDefinition.SubtypeName != "SmallBlockMediumSorterTeleport") return;
-                
-                ParseName(out var name, out var gridName, out var toMode);
+
+                var name = "";
+                var gridName = "";
+                var toMode = false;
+                ParseName(ref name, ref gridName, ref toMode);
                     
                 if (_inventory == null) _inventory = _cargoTeleporter.GetInventory();
                 if (toMode && _inventory.Empty()) return;
@@ -82,7 +72,7 @@ namespace CargoTeleporter
                 Write("GetBlocks");
                 var fatBlocks = new List<IMySlimBlock>();
                 _cargoTeleporter.CubeGrid.GetBlocks(fatBlocks, x => x?.FatBlock != null);
-                var cubeBlocks = fatBlocks.Cast<IMyCubeBlock>();
+                var cubeBlocks = fatBlocks.ConvertAll(x => x.FatBlock);
 
                 if (name.Length < 2)
                 {
@@ -94,7 +84,7 @@ namespace CargoTeleporter
 
                 if (gridName.Length > 2 && gridName != _cargoTeleporter.CubeGrid.CustomName)
                 {
-                    GetTarget(gridName, name, _cargoTeleporter.CubeGrid, out target);
+                    target = GetTarget(gridName, name, _cargoTeleporter.CubeGrid);
                 }
                 else
                 {
@@ -115,7 +105,8 @@ namespace CargoTeleporter
             }
             catch (Exception ex)
             {
-                Logging.WriteLine(ex.Message);
+                Logging.WriteLine(ex.ToString());
+                Logging.WriteLine(ex.StackTrace);
             }
         }
 
@@ -124,36 +115,52 @@ namespace CargoTeleporter
             if (constantStuff.debugSorter) Logging.WriteLine(v);
         }
 
-        private void ParseName(out string name, out string gridName, out bool toMode)
+        private void ParseName(ref string name, ref string gridName, ref bool toMode)
         {
-            name = "";
-            gridName = "";
-            toMode = true;
-
             if (_cargoTeleporter.DisplayNameText.Contains("G:"))
             {
                 var start = _cargoTeleporter.DisplayNameText.IndexOf("G:") + 2;
-                gridName = _cargoTeleporter.DisplayNameText.Substring(start, _cargoTeleporter.DisplayNameText.IndexOf(_cargoTeleporter.DisplayNameText[start - 3], start) - start);
+                var length = _cargoTeleporter.DisplayNameText.IndexOf(GetSymbol(_cargoTeleporter.DisplayNameText[start - 3]), start) - start;
+                if (length >= 0) gridName = _cargoTeleporter.DisplayNameText.Substring(start, length);
             }
 
             if (_cargoTeleporter.DisplayNameText.Contains("T:"))
             {
                 var start = _cargoTeleporter.DisplayNameText.IndexOf("T:") + 2;
-                name = _cargoTeleporter.DisplayNameText.Substring(start, _cargoTeleporter.DisplayNameText.IndexOf(_cargoTeleporter.DisplayNameText[start - 3], start) - start);
+                var length = _cargoTeleporter.DisplayNameText.IndexOf(GetSymbol(_cargoTeleporter.DisplayNameText[start - 3]), start) - start;
+                if (length >= 0) name = _cargoTeleporter.DisplayNameText.Substring(start, length);
             }
             else if (_cargoTeleporter.DisplayNameText.Contains("F:"))
             {
                 var start = _cargoTeleporter.DisplayNameText.IndexOf("F:") + 2;
-                name = _cargoTeleporter.DisplayNameText.Substring(start, _cargoTeleporter.DisplayNameText.IndexOf(_cargoTeleporter.DisplayNameText[start - 3], start) - start);
+                var length = _cargoTeleporter.DisplayNameText.IndexOf(GetSymbol(_cargoTeleporter.DisplayNameText[start - 3]), start) - start;
+                if (length >= 0) name = _cargoTeleporter.DisplayNameText.Substring(start, length);
                 toMode = false;
             }
         }
 
-        private Void GetTarget(string gridName, string name, IMyCubeGrid startingGrid, out IMyEntity target)
+        private static char GetSymbol(char symbol)
+        {
+            switch (symbol)
+            {
+                case '{':
+                    return '}';
+                case '[':
+                    return ']';
+                case '(':
+                    return ')';
+                case '<':
+                    return '>';
+                default:
+                    return symbol;
+            }
+        }
+
+        private IMyEntity GetTarget(string gridName, string name, IMyCubeGrid startingGrid)
         {
             var gridsToProcess = new List<IMyCubeGrid>();
             var gridsProcessed = new HashSet<IMyCubeGrid>();
-            target = null;
+            IMyEntity target = null;
             
             gridsToProcess.Add(startingGrid);
 
@@ -164,7 +171,7 @@ namespace CargoTeleporter
                 
                 var fatBlocks = new List<IMySlimBlock>();
                 processing.GetBlocks(fatBlocks, x => x?.FatBlock != null);
-                var gridBlocks = fatBlocks.Cast<IMyCubeBlock>();
+                var gridBlocks = fatBlocks.ConvertAll(x => x.FatBlock);
 
                 if (processing.DisplayName == gridName)
                 {
@@ -187,6 +194,8 @@ namespace CargoTeleporter
 
                 gridsProcessed.Add(processing);
             }
+
+            return target;
         }
     }
 }
