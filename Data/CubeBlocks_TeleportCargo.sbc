@@ -1,5 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <ResearchBlocks>
+    <ResearchBlock xsi:type="ResearchBlock">
+      <Id Type="MyObjectBuilder_ConveyorSorter" Subtype="LargeBlockSmallSorterTeleport" />
+      <UnlockedByGroups>
+        <GroupSubtype>13</GroupSubtype>
+        <GroupSubtype>TeleUnlock</GroupSubtype>
+      </UnlockedByGroups>
+    </ResearchBlock>
+    <ResearchBlock xsi:type="ResearchBlock">
+      <Id Type="MyObjectBuilder_ConveyorSorter" Subtype="LargeBlockMediumSorterTeleport" />
+      <UnlockedByGroups>
+        <GroupSubtype>13</GroupSubtype>
+        <GroupSubtype>TeleUnlock</GroupSubtype>
+      </UnlockedByGroups>
+    </ResearchBlock>
+  </ResearchBlocks>
+  <ResearchGroups>
+    <ResearchGroup xsi:type="ResearchGroup">
+      <Id Type="MyObjectBuilder_ResearchGroupDefinition" Subtype="TeleUnlock" />
+      <Members>
+        <BlockId Type="MyObjectBuilder_Collector" Subtype="Collector" />
+        <BlockId Type="MyObjectBuilder_Collector" Subtype="CollectorSmall" />
+        <BlockId Type="MyObjectBuilder_ShipConnector" Subtype="Connector" />
+        <BlockId Type="MyObjectBuilder_ShipConnector" Subtype="ConnectorMedium" />
+        <BlockId Type="MyObjectBuilder_ConveyorSorter" Subtype="LargeBlockConveyorSorter" />
+        <BlockId Type="MyObjectBuilder_ConveyorSorter" Subtype="MediumBlockConveyorSorter" />
+        <BlockId Type="MyObjectBuilder_ConveyorSorter" Subtype="SmallBlockConveyorSorter" />
+      </Members>
+    </ResearchGroup>
+  </ResearchGroups>
   <CubeBlocks>
 	
 	<Definition xsi:type="MyObjectBuilder_ConveyorSorterDefinition">
@@ -40,13 +70,14 @@
       <MirroringZ>Y</MirroringZ>
       <EdgeType>Light</EdgeType>
       <ResourceSinkGroup>Utility</ResourceSinkGroup>
-      <PowerInput>0.00100</PowerInput>
+      <PowerInput>1</PowerInput>
       <BuildTimeSeconds>45</BuildTimeSeconds>
       <InventorySize>
         <X>2.5</X>
         <Y>2.5</Y>
         <Z>2.5</Z>
       </InventorySize>
+      <Description>Wireless conveyor sorter to any container on the same grid or connected grids (via antenna). Requires 1 MW of power.</Description>
     </Definition>
 	
 	<Definition xsi:type="MyObjectBuilder_ConveyorSorterDefinition">
@@ -83,13 +114,14 @@
       <MirroringZ>Y</MirroringZ>
       <EdgeType>Light</EdgeType>
       <ResourceSinkGroup>Utility</ResourceSinkGroup>
-      <PowerInput>0.000250</PowerInput>
+      <PowerInput>0.5</PowerInput>
       <BuildTimeSeconds>25</BuildTimeSeconds>
       <InventorySize>
         <X>1.5</X>
         <Y>1.5</Y>
         <Z>1.5</Z>
       </InventorySize>
+      <Description>Wireless conveyor sorter to any container on the same grid or connected grids (via antenna). Requires 500 KW of power.</Description>
     </Definition>
 	
   </CubeBlocks>

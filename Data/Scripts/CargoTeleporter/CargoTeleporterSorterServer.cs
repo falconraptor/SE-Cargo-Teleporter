@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using Sandbox.Common.ObjectBuilders;
+using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
 using Sandbox.ModAPI.Ingame;
+using VRage.Game;
 using VRage.Game.Components;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
@@ -12,6 +15,7 @@ using VRageMath;
 using IMyFunctionalBlock = Sandbox.ModAPI.IMyFunctionalBlock;
 using IMyLaserAntenna = Sandbox.ModAPI.Ingame.IMyLaserAntenna;
 using IMyRadioAntenna = Sandbox.ModAPI.Ingame.IMyRadioAntenna;
+using IMyTerminalBlock = Sandbox.ModAPI.IMyTerminalBlock;
 
 namespace CargoTeleporter
 {
@@ -19,16 +23,18 @@ namespace CargoTeleporter
         "SmallBlockMediumSorterTeleport")]
     public class CargoTeleporterSorterServer : MyGameLogicComponent
     {
-        private IMyCubeBlock _cargoTeleporter;
+        private MyCubeBlock _cargoTeleporter;
         private IMyInventory _inventory;
         private MyObjectBuilder_EntityBase _objectBuilder;
+        private string _status;
 
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
         {
             Entity.NeedsUpdate |= MyEntityUpdateEnum.EACH_100TH_FRAME;
             NeedsUpdate |= MyEntityUpdateEnum.EACH_100TH_FRAME;
+            NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
             _objectBuilder = objectBuilder;
-            _cargoTeleporter = Entity as IMyCubeBlock;
+            _cargoTeleporter = Entity as MyCubeBlock;
             base.Init(objectBuilder);
         }
 
@@ -53,51 +59,55 @@ namespace CargoTeleporter
             {
                 if (MyAPIGateway.Session == null)
                 {
-                    if (constantStuff.debugSorter) Logging.WriteLine("MyAPIGateway.Session is null");
+                    Write("MyAPIGateway.Session is null");
                     return;
                 }
                 
                 Write("MainRun");
-                if (_cargoTeleporter.BlockDefinition.SubtypeName != "LargeBlockSmallSorterTeleport" &&
-                    _cargoTeleporter.BlockDefinition.SubtypeName != "SmallBlockMediumSorterTeleport") return;
 
                 var name = "";
                 var gridName = "";
-                var toMode = false;
+                var toMode = true;
                 ParseName(ref name, ref gridName, ref toMode);
-                    
-                if (_inventory == null) _inventory = _cargoTeleporter.GetInventory();
-                if (toMode && _inventory.Empty()) return;
-                    
-                Write("GetBlocks");
-                var fatBlocks = new List<IMySlimBlock>();
-                _cargoTeleporter.CubeGrid.GetBlocks(fatBlocks, x => x?.FatBlock != null);
-                var cubeBlocks = fatBlocks.ConvertAll(x => x.FatBlock);
-
+                
                 if (name.Length < 2)
                 {
                     Write("Name too small");
+                    UpdateStatus("Status: No filters\n\nPlease add [T:Block Name] or [F:Block Name].\nPlease add [G:Grid Name] if using antennas.");
                     return;
                 }
-
-                IMyEntity target = null;
-
-                if (gridName.Length > 2 && gridName != _cargoTeleporter.CubeGrid.CustomName)
+                    
+                if (_inventory == null) _inventory = _cargoTeleporter.GetInventory();
+                if (toMode && _inventory.Empty())
                 {
-                    target = GetTarget(gridName, name, _cargoTeleporter.CubeGrid);
+                    UpdateStatus("Status: Source Empty");
+                    return;
                 }
-                else
-                {
-                    target = cubeBlocks.First(x => x?.DisplayNameText == name && OwnershipUtils.isSameFactionOrOwner(_cargoTeleporter, x));
-                }
+                    
+                Write("GetBlocks");
+                var cubeBlocks = _cargoTeleporter.CubeGrid.GetFatBlocks();
+
+                var target = gridName.Length > 2 && gridName != _cargoTeleporter.CubeGrid.Name ? GetTarget(gridName, name, _cargoTeleporter.CubeGrid) : cubeBlocks.First(x => x?.DisplayNameText == name && OwnershipUtils.isSameFactionOrOwner(_cargoTeleporter, x));
 
                 if (target == null)
                 {
                     Write("target null");
+                    UpdateStatus("Status: Disconnected");
                     return;
                 }
-
+                
                 var targetInventory = target.GetInventory();
+
+                var status = "Status: Connected\nTarget: ";
+                var targetStatus = targetInventory.IsFull ? "Full" : targetInventory.Empty() ? "Empty" : "Some";
+                var inventoryStatus = _inventory.IsFull ? "Full" : _inventory.Empty() ? "Empty" : "Some";
+                if (toMode) status += targetStatus;
+                else status += inventoryStatus;
+                status += "\nSource: ";
+                if (!toMode) status += targetStatus;
+                else status += inventoryStatus;
+                UpdateStatus(status);
+                
                 if (!targetInventory.IsFull && toMode)
                     targetInventory.TransferItemFrom(_inventory, 0, null, true, null, false);
                 else if (!targetInventory.Empty() && !_inventory.IsFull && !toMode)
@@ -106,8 +116,28 @@ namespace CargoTeleporter
             catch (Exception ex)
             {
                 Logging.WriteLine(ex.ToString());
-                Logging.WriteLine(ex.StackTrace);
             }
+        }
+        
+        public override void UpdateOnceBeforeFrame()
+        {
+            (_cargoTeleporter as IMyTerminalBlock).AppendingCustomInfo += AppendingCustomInfo;
+        }
+
+        private void AppendingCustomInfo(IMyTerminalBlock block, StringBuilder sb)
+        {
+            sb.Clear();
+            sb.Append(_status);
+        }
+
+        private void UpdateStatus(string status)
+        {
+            _status = status;
+            (_cargoTeleporter as IMyTerminalBlock).RefreshCustomInfo();
+            if (_cargoTeleporter.IDModule == null) return;
+            var share = _cargoTeleporter.IDModule.ShareMode;
+            _cargoTeleporter.ChangeOwner(_cargoTeleporter.OwnerId, share == MyOwnershipShareModeEnum.None ? MyOwnershipShareModeEnum.Faction : MyOwnershipShareModeEnum.None);
+            _cargoTeleporter.ChangeOwner(_cargoTeleporter.OwnerId, share);
         }
 
         private void Write(string v)
@@ -117,43 +147,25 @@ namespace CargoTeleporter
 
         private void ParseName(ref string name, ref string gridName, ref bool toMode)
         {
-            if (_cargoTeleporter.DisplayNameText.Contains("G:"))
-            {
-                var start = _cargoTeleporter.DisplayNameText.IndexOf("G:") + 2;
-                var length = _cargoTeleporter.DisplayNameText.IndexOf(GetSymbol(_cargoTeleporter.DisplayNameText[start - 3]), start) - start;
-                if (length >= 0) gridName = _cargoTeleporter.DisplayNameText.Substring(start, length);
-            }
+            if (_cargoTeleporter.DisplayNameText.Contains("[G:"))
+                gridName = GetNameFromChar("[G:");
 
-            if (_cargoTeleporter.DisplayNameText.Contains("T:"))
+            if (_cargoTeleporter.DisplayNameText.Contains("[T:"))
+                name = GetNameFromChar("[T:");
+            else if (_cargoTeleporter.DisplayNameText.Contains("[F:"))
             {
-                var start = _cargoTeleporter.DisplayNameText.IndexOf("T:") + 2;
-                var length = _cargoTeleporter.DisplayNameText.IndexOf(GetSymbol(_cargoTeleporter.DisplayNameText[start - 3]), start) - start;
-                if (length >= 0) name = _cargoTeleporter.DisplayNameText.Substring(start, length);
-            }
-            else if (_cargoTeleporter.DisplayNameText.Contains("F:"))
-            {
-                var start = _cargoTeleporter.DisplayNameText.IndexOf("F:") + 2;
-                var length = _cargoTeleporter.DisplayNameText.IndexOf(GetSymbol(_cargoTeleporter.DisplayNameText[start - 3]), start) - start;
-                if (length >= 0) name = _cargoTeleporter.DisplayNameText.Substring(start, length);
+                name = GetNameFromChar("[F:");
                 toMode = false;
             }
+
+            Write(_cargoTeleporter.DisplayNameText + ": "+ gridName + ", " + name + ", " + toMode.ToString());
         }
 
-        private static char GetSymbol(char symbol)
+        private string GetNameFromChar(string ch)
         {
-            switch (symbol)
-            {
-                case '{':
-                    return '}';
-                case '[':
-                    return ']';
-                case '(':
-                    return ')';
-                case '<':
-                    return '>';
-                default:
-                    return symbol;
-            }
+            var start = _cargoTeleporter.DisplayNameText.IndexOf(ch, StringComparison.Ordinal) + 3;
+            var length = _cargoTeleporter.DisplayNameText.IndexOf("]", start, StringComparison.Ordinal) - start;
+            return length >= 0 ? _cargoTeleporter.DisplayNameText.Substring(start, length) : "";
         }
 
         private IMyEntity GetTarget(string gridName, string name, IMyCubeGrid startingGrid)
@@ -188,7 +200,7 @@ namespace CargoTeleporter
 
                 foreach (var antenna in gridBlocks.Where(x => x is IMyLaserAntenna && OwnershipUtils.isSameFactionOrOwner(processing, x)).Cast<IMyLaserAntenna>().Where(x => x.Status == MyLaserAntennaStatus.Connected))
                 {
-                    var sphere = new BoundingSphereD(antenna.TargetCoords, 5);
+                    var sphere = new BoundingSphereD(antenna.TargetCoords, 1);
                     gridsToProcess.AddRange(MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).Cast<IMyCubeGrid>().Where(x => !gridsProcessed.Contains(x) && !gridsToProcess.Contains(x)));
                 }
 

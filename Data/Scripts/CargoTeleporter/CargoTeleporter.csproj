@@ -83,7 +83,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CargoTeleporterSorterServer.cs" />
-    <Compile Include="CargoTeleporterSorterServerOld.cs" />
     <Compile Include="constantStuff.cs" />
     <Compile Include="Logging.cs" />
     <Compile Include="OwnershipUtils.cs" />
