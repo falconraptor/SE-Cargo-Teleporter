@@ -6,8 +6,8 @@
         <TypeId>GuiBlockCategoryDefinition</TypeId>
         <SubtypeId/>
       </Id>
-      <DisplayName>+Pacas00</DisplayName>
-      <Name>Pacas00_SE_Mods</Name>
+      <DisplayName>DisplayName_Category_ConveyorBlocks</DisplayName>
+      <Name>Conveyors</Name>
       <ItemIds>
 		<string>ConveyorSorter/LargeBlockSmallSorterTeleport</string>
 		<string>ConveyorSorter/SmallBlockMediumSorterTeleport</string>
