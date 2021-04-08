@@ -40,6 +40,6 @@ The Teleporter and destination blocks must be owned by the same person or the sa
 
 ## Credits
 
-Original mod by [Peter Cashel](https://github.com/pacas00)
+Original mod by [Peter Cashel](https://github.com/pacas00): https://steamcommunity.com/sharedfiles/filedetails/?id=565601395&searchtext=cargo+teleporter
 
 Rewritten by [Dustin Surwill](https://github.com/falconraptor) and [Marcus Kertesz](https://github.com/ModernMAK)
