@@ -36,6 +36,7 @@ namespace CargoTeleporter
             _objectBuilder = objectBuilder;
             _cargoTeleporter = Entity as MyCubeBlock;
             base.Init(objectBuilder);
+            (_cargoTeleporter as IMyTerminalBlock).AppendingCustomInfo += AppendingCustomInfo;
         }
 
         public override MyObjectBuilder_EntityBase GetObjectBuilder(bool copy = false)
@@ -45,13 +46,11 @@ namespace CargoTeleporter
 
         public override void Close()
         {
-            base.Close();
-            Logging.close();
+            Logging.Close();
         }
 
         public override void UpdateBeforeSimulation100()
         {
-            base.UpdateBeforeSimulation100();
             if (_cargoTeleporter == null) return;
             if (!((IMyFunctionalBlock) _cargoTeleporter).Enabled) return;
 
@@ -87,25 +86,42 @@ namespace CargoTeleporter
                 Write("GetBlocks");
                 var cubeBlocks = _cargoTeleporter.CubeGrid.GetFatBlocks();
 
-                var target = gridName.Length > 2 && gridName != _cargoTeleporter.CubeGrid.Name ? GetTarget(gridName, name, _cargoTeleporter.CubeGrid) : cubeBlocks.First(x => x?.DisplayNameText == name && OwnershipUtils.isSameFactionOrOwner(_cargoTeleporter, x));
+                //We use true, if it goes through the ref; (which I treat like an out) it will be changed.
+                //If it goes through the linq; then we are unchanged and true is the correct value. (we have found the grid, it is this one)
+                bool gridFound = true;
+                var target = gridName.Length > 2 && gridName != _cargoTeleporter.CubeGrid.Name ? 
+                    GetTarget(gridName, name, _cargoTeleporter.CubeGrid, ref gridFound) : 
+                    cubeBlocks.First(x => x?.DisplayNameText == name && OwnershipUtils.isSameFactionOrOwner(_cargoTeleporter, x));
 
+
+                var disonnectedStatus = "Status: Disconnected";
+                //If grid not found, 
+                if (!gridFound)
+                {
+                    Write("Grid Not Found");
+                }
+                disonnectedStatus += $"\nGrid: {(gridFound ? "" : "Not ")}Found";
                 if (target == null)
                 {
-                    Write("target null");
-                    UpdateStatus("Status: Disconnected");
-                    return;
+                    Write("Target Not Found");
                 }
-                
-                var targetInventory = target.GetInventory();
+                //This message should only ever say T/S Not Found, but in case I flubbed it; it can say found
+                disonnectedStatus += $"\n{(toMode ? "Target" : "Source")}: {(target != null ? "" : "Not ")}Found";
 
+                if (target == null || !gridFound)
+				{
+                    UpdateStatus(disonnectedStatus);
+                    return;
+				}
+
+                var targetInventory = target.GetInventory();
                 var status = "Status: Connected\nTarget: ";
                 var targetStatus = targetInventory.IsFull ? "Full" : targetInventory.Empty() ? "Empty" : "Some";
                 var inventoryStatus = _inventory.IsFull ? "Full" : _inventory.Empty() ? "Empty" : "Some";
-                if (toMode) status += targetStatus;
-                else status += inventoryStatus;
+                status += toMode ? targetStatus : inventoryStatus;
                 status += "\nSource: ";
-                if (!toMode) status += targetStatus;
-                else status += inventoryStatus;
+                status += !toMode ? targetStatus : inventoryStatus;
+
                 UpdateStatus(status);
                 
                 if (!targetInventory.IsFull && toMode)
@@ -118,11 +134,6 @@ namespace CargoTeleporter
                 Logging.WriteLine(ex.ToString());
             }
         }
-        
-        public override void UpdateOnceBeforeFrame()
-        {
-            (_cargoTeleporter as IMyTerminalBlock).AppendingCustomInfo += AppendingCustomInfo;
-        }
 
         private void AppendingCustomInfo(IMyTerminalBlock block, StringBuilder sb)
         {
@@ -132,6 +143,7 @@ namespace CargoTeleporter
 
         private void UpdateStatus(string status)
         {
+            if (status == _status) return;
             _status = status;
             (_cargoTeleporter as IMyTerminalBlock).RefreshCustomInfo();
             if (_cargoTeleporter.IDModule == null) return;
@@ -142,37 +154,109 @@ namespace CargoTeleporter
 
         private void Write(string v)
         {
-            if (constantStuff.debugSorter) Logging.WriteLine(v);
+            if (Config.enableDebug) Logging.WriteLine(v);
         }
 
         private void ParseName(ref string name, ref string gridName, ref bool toMode)
         {
-            if (_cargoTeleporter.DisplayNameText.Contains("[G:"))
-                gridName = GetNameFromChar("[G:");
+            var displayName = _cargoTeleporter.DisplayNameText;
+            //For ease of reading
+            const int NotFound = -1;
+            const char StartBracket = '[';
+            const char StopBracket = ']';
+            const char ModeDelimiter = ':';
+            const char ToMode = 'T';
+            const char ToModeLower = 't';
+            const char FromMode = 'F';
+            const char FromModeLower = 'f';
+            const char GlobalMode = 'G';
+            const char GlobalModeLower = 'g';
 
-            if (_cargoTeleporter.DisplayNameText.Contains("[T:"))
-                name = GetNameFromChar("[T:");
-            else if (_cargoTeleporter.DisplayNameText.Contains("[F:"))
+
+
+            var workingIndex = 0;
+            while (true)
             {
-                name = GetNameFromChar("[F:");
-                toMode = false;
+                if (workingIndex > displayName.Length)
+                {
+                    Write("Parsing Name - End Of String");
+                    break;
+                }
+
+                var start = displayName.IndexOf(StartBracket, workingIndex);
+                if (start == NotFound)
+                {
+                    Write("Parsing Name - '[' Not Found");
+                    break;
+                }
+
+                var stop = displayName.IndexOf(StopBracket, start);
+                if (stop == NotFound)
+                {
+                    Write("Parsing Name - Closing ']' Not Found");
+                    break;
+                }
+                var delimiter = displayName.IndexOf(ModeDelimiter, start, stop - start);
+                if (delimiter == NotFound)
+                {
+                    workingIndex = stop + 1; //We jump to stop instead of start because the delimeter does not exist; not because it is invalid
+                    Write("Parsing Name - Missing ':' in [] pair");
+                    continue;
+                }
+
+                //Trims [mode:name] to just mode and name
+                var modePart = displayName.Substring(start + 1, delimiter - start - 1);
+                var namePart = displayName.Substring(delimiter + 1, stop - delimiter - 1);
+
+                //Parses name
+                namePart = namePart.Trim();
+
+                //Parses mode
+                //First strip whitespace
+                modePart = modePart.Trim();
+
+                if (modePart.Length != 1)
+                {
+                    //Mode is invalid, advance start and resume search
+                    workingIndex = start + 1;
+                    Write($"Parsing Name - '{modePart}' is not 1 charachter.");
+                    continue;
+                }
+                var modeChar = modePart[0];
+                switch (modeChar)
+                {
+                    case ToMode:
+                    case ToModeLower:
+                        name = namePart;
+                        toMode = true;
+                        break;
+                    case FromMode:
+                    case FromModeLower:
+                        name = namePart;
+                        toMode = false;
+                        break;
+                    case GlobalMode:
+                    case GlobalModeLower:
+                        gridName = namePart;
+                        break;
+                    default:
+                        //Mode is invalid char, advance start and resume search
+                        workingIndex = start + 1;
+                        Write($"Parsing Name - '{modePart}' is not a valid charachter.");
+                        continue;
+                }
+                workingIndex = stop + 1;
+
             }
-
-            Write(_cargoTeleporter.DisplayNameText + ": "+ gridName + ", " + name + ", " + toMode.ToString());
+            Write(displayName + ": "+ gridName + ", " + name + ", " + toMode.ToString());
         }
 
-        private string GetNameFromChar(string ch)
-        {
-            var start = _cargoTeleporter.DisplayNameText.IndexOf(ch, StringComparison.Ordinal) + 3;
-            var length = _cargoTeleporter.DisplayNameText.IndexOf("]", start, StringComparison.Ordinal) - start;
-            return length >= 0 ? _cargoTeleporter.DisplayNameText.Substring(start, length) : "";
-        }
-
-        private IMyEntity GetTarget(string gridName, string name, IMyCubeGrid startingGrid)
+        private IMyEntity GetTarget(string gridName, string name, IMyCubeGrid startingGrid, ref bool foundGrid)
         {
             var gridsToProcess = new List<IMyCubeGrid>();
             var gridsProcessed = new HashSet<IMyCubeGrid>();
             IMyEntity target = null;
+            foundGrid = false;
             
             gridsToProcess.Add(startingGrid);
 
@@ -189,6 +273,7 @@ namespace CargoTeleporter
                 {
                     
                     target = gridBlocks.First(x => x?.DisplayNameText == name);
+                    foundGrid = true;
                     break;
                 }
                 

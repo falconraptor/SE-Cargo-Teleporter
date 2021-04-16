@@ -1,18 +1,13 @@
-﻿using VRage.Game.ModAPI;
-using Sandbox.ModAPI;
+﻿using Sandbox.ModAPI;
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace CargoTeleporter
 {
-    public static class Logging
+	public static class Logging
     {
         private static TextWriter writer = null;
-        public static void setup()
+        public static void Setup()
         {
             try
             {
@@ -26,14 +21,14 @@ namespace CargoTeleporter
             try
             {
                 if (writer == null)
-                    setup();
+                    Setup();
                 writer.WriteLine(DateTime.Now.ToString("[HH:mm:ss] ") + s);
                 writer.Flush();
             }
             catch { }
         }
 
-        public static void close()
+        public static void Close()
         {
             try
             {
