@@ -182,26 +182,36 @@ namespace CargoTeleporter
             var workingIndex = 0;
             while (true)
             {
-                if (workingIndex == NotFound)
+                if (workingIndex > displayName.Length)
+                {
+                    Write("Parsing Name - End Of String");
                     break;
+                }
+
                 var start = displayName.IndexOf(StartBracket, workingIndex);
                 if (start == NotFound)
+                {
+                    Write("Parsing Name - '[' Not Found");
                     break;
+                }
 
                 var stop = displayName.IndexOf(StopBracket, start);
                 if (stop == NotFound)
+                {
+                    Write("Parsing Name - Closing ']' Not Found");
                     break;
-
+                }
                 var delimiter = displayName.IndexOf(ModeDelimiter, start, stop - start);
                 if (delimiter == NotFound)
                 {
                     workingIndex = stop + 1; //We jump to stop instead of start because the delimeter does not exist; not because it is invalid
+                    Write("Parsing Name - Missing ':' in [] pair");
                     continue;
                 }
 
                 //Trims [mode:name] to just mode and name
-                var modePart = displayName.Substring(start + 1, delimiter - start - 2);
-                var namePart = displayName.Substring(delimiter + 1, stop - delimiter - 2);
+                var modePart = displayName.Substring(start + 1, delimiter - start - 1);
+                var namePart = displayName.Substring(delimiter + 1, stop - delimiter - 1);
 
                 //Parses name
                 namePart = namePart.Trim();
@@ -214,6 +224,7 @@ namespace CargoTeleporter
                 {
                     //Mode is invalid, advance start and resume search
                     workingIndex = start + 1;
+                    Write($"Parsing Name - '{modePart}' is not 1 charachter.");
                     continue;
                 }
                 var modeChar = modePart[0];
@@ -236,8 +247,10 @@ namespace CargoTeleporter
                     default:
                         //Mode is invalid char, advance start and resume search
                         workingIndex = start + 1;
+                        Write($"Parsing Name - '{modePart}' is not a valid charachter.");
                         continue;
                 }
+                workingIndex = stop + 1;
 
             }
             Write(displayName + ": "+ gridName + ", " + name + ", " + toMode.ToString());
