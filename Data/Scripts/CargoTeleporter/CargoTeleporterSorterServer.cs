@@ -36,6 +36,7 @@ namespace CargoTeleporter
             _objectBuilder = objectBuilder;
             _cargoTeleporter = Entity as MyCubeBlock;
             base.Init(objectBuilder);
+            (_cargoTeleporter as IMyTerminalBlock).AppendingCustomInfo += AppendingCustomInfo;
         }
 
         public override MyObjectBuilder_EntityBase GetObjectBuilder(bool copy = false)
@@ -45,13 +46,11 @@ namespace CargoTeleporter
 
         public override void Close()
         {
-            base.Close();
             Logging.Close();
         }
 
         public override void UpdateBeforeSimulation100()
         {
-            base.UpdateBeforeSimulation100();
             if (_cargoTeleporter == null) return;
             if (!((IMyFunctionalBlock) _cargoTeleporter).Enabled) return;
 
@@ -135,11 +134,6 @@ namespace CargoTeleporter
                 Logging.WriteLine(ex.ToString());
             }
         }
-        
-        public override void UpdateOnceBeforeFrame()
-        {
-            (_cargoTeleporter as IMyTerminalBlock).AppendingCustomInfo += AppendingCustomInfo;
-        }
 
         private void AppendingCustomInfo(IMyTerminalBlock block, StringBuilder sb)
         {
@@ -149,6 +143,7 @@ namespace CargoTeleporter
 
         private void UpdateStatus(string status)
         {
+            if (status == _status) return;
             _status = status;
             (_cargoTeleporter as IMyTerminalBlock).RefreshCustomInfo();
             if (_cargoTeleporter.IDModule == null) return;
