@@ -19,6 +19,21 @@ using IMyTerminalBlock = Sandbox.ModAPI.IMyTerminalBlock;
 
 namespace CargoTeleporter
 {
+    // Class to allow caching the reference
+    // Allows us to set the 'out' value once in parse, and not worry about changing it after
+    internal class NameInfo
+	{
+        public string name;
+        public string grid;
+
+        public void Clear()
+		{
+            name = default;
+            grid = default;
+		}
+	
+    }
+
     [MyEntityComponentDescriptor(typeof(MyObjectBuilder_ConveyorSorter), false, "LargeBlockSmallSorterTeleport",
         "SmallBlockMediumSorterTeleport")]
     public class CargoTeleporterSorterServer : MyGameLogicComponent
@@ -28,6 +43,20 @@ namespace CargoTeleporter
         private MyObjectBuilder_EntityBase _objectBuilder;
         private string _status;
 
+        //Cached to avoid creating new instances every 100 ticks
+        private NameInfo _squareName;
+        private NameInfo _angleName;
+        private NameInfo _curlyName;
+
+
+
+        private const char StartSquareBracket = '[';
+        private const char StartCurlyBracket = '{';
+        private const char StartAngleBracket = '<';
+        private const char StopSquareBracket = ']';
+        private const char StopCurlyBracket = '}';
+        private const char StopAngleBracket = '>';
+
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
         {
             Entity.NeedsUpdate |= MyEntityUpdateEnum.EACH_100TH_FRAME;
@@ -35,6 +64,11 @@ namespace CargoTeleporter
             NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
             _objectBuilder = objectBuilder;
             _cargoTeleporter = Entity as MyCubeBlock;
+
+            _squareName = new NameInfo();
+            _angleName = new NameInfo();
+            _curlyName = new NameInfo();
+
             base.Init(objectBuilder);
             (_cargoTeleporter as IMyTerminalBlock).AppendingCustomInfo += AppendingCustomInfo;
         }
@@ -157,21 +191,48 @@ namespace CargoTeleporter
             if (Config.enableDebug) Logging.WriteLine(v);
         }
 
-        private void ParseName(ref string name, ref string gridName, ref bool toMode)
+        private int IndexOfStartBracket(string str, int index, ref char stopBracket)
+		{
+
+            for (var i = index; i < str.Length; i++)
+            {
+                var c = str[i];
+                switch(c)
+                {
+                    case StartAngleBracket:
+                        stopBracket = StopAngleBracket;
+                        return i;
+                    case StartCurlyBracket:
+                        stopBracket = StopCurlyBracket;
+                        return i;
+                    case StartSquareBracket:
+                        stopBracket = StopSquareBracket;
+                        return i;
+                    default:
+                        continue;
+                }
+            }
+            return -1;
+        }
+
+        ///<remarks>
+        /// From and To cannot be cached.
+        /// To cache these values; create a copy.
+        /// </remarks>
+        private void ParseName(ref NameInfo from, ref NameInfo to)
         {
             var displayName = _cargoTeleporter.DisplayNameText;
             //For ease of reading
             const int NotFound = -1;
-            const char StartBracket = '[';
-            const char StopBracket = ']';
-            const char ModeDelimiter = ':';
+             const char ModeDelimiter = ':';
             const char ToMode = 'T';
-            const char ToModeLower = 't';
             const char FromMode = 'F';
-            const char FromModeLower = 'f';
             const char GlobalMode = 'G';
-            const char GlobalModeLower = 'g';
+            //Name Info based on bracket type
 
+            _squareName.Clear();
+            _curlyName.Clear();
+            _angleName.Clear();
 
 
             var workingIndex = 0;
@@ -183,14 +244,15 @@ namespace CargoTeleporter
                     break;
                 }
 
-                var start = displayName.IndexOf(StartBracket, workingIndex);
+                char matchingBracket = ' ';
+                var start = IndexOfStartBracket(displayName, workingIndex, ref matchingBracket);
                 if (start == NotFound)
                 {
-                    Write("Parsing Name - '[' Not Found");
+                    Write("Parsing Name - Starting Bracket '[ < {' Not Found");
                     break;
                 }
 
-                var stop = displayName.IndexOf(StopBracket, start);
+                var stop = displayName.IndexOf(matchingBracket, start);
                 if (stop == NotFound)
                 {
                     Write("Parsing Name - Closing ']' Not Found");
@@ -222,22 +284,37 @@ namespace CargoTeleporter
                     Write($"Parsing Name - '{modePart}' is not 1 charachter.");
                     continue;
                 }
-                var modeChar = modePart[0];
+                //Make uppercase
+                var modeChar = char.ToUpper(modePart[0]);
+                NameInfo current;
+                switch(matchingBracket)
+				{
+                    case StopCurlyBracket:
+                        current = _curlyName;
+                        break;
+                    case StopSquareBracket:
+                        current = _squareName;
+                        break;
+                    case StopAngleBracket:
+                        current = _angleName;
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(matchingBracket));
+				}
+
+                //Determine which name
                 switch (modeChar)
                 {
                     case ToMode:
-                    case ToModeLower:
-                        name = namePart;
-                        toMode = true;
+                        current.name = namePart;
+                        to = current;
                         break;
                     case FromMode:
-                    case FromModeLower:
-                        name = namePart;
-                        toMode = false;
+                        current.name = namePart;
+                        from = current;
                         break;
                     case GlobalMode:
-                    case GlobalModeLower:
-                        gridName = namePart;
+                        current.grid = namePart;
                         break;
                     default:
                         //Mode is invalid char, advance start and resume search
@@ -248,7 +325,9 @@ namespace CargoTeleporter
                 workingIndex = stop + 1;
 
             }
-            Write(displayName + ": "+ gridName + ", " + name + ", " + toMode.ToString());
+            var fromStr = from != null ? $"'{from.name}' ON '{from.grid}'" : "NULL";
+            var toStr = from != null ? $"'{to.name}' ON '{to.grid}'" : "NULL";
+            Write($"{displayName}\n\tFrom: {fromStr}\n\tTo: {toStr}");
         }
 
         private IMyEntity GetTarget(string gridName, string name, IMyCubeGrid startingGrid, ref bool foundGrid)
