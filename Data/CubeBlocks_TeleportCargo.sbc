@@ -31,7 +31,7 @@
     </ResearchGroup>
   </ResearchGroups>
   <CubeBlocks>
-	
+
 	<Definition xsi:type="MyObjectBuilder_ConveyorSorterDefinition">
       <Id>
         <TypeId>ConveyorSorter</TypeId>
@@ -78,6 +78,7 @@
         <Z>2.5</Z>
       </InventorySize>
       <Description>Wireless conveyor sorter to any container on the same grid or connected grids (via antenna). Requires 1 MW of power.</Description>
+      <PCU>200</PCU>
     </Definition>
 	
 	<Definition xsi:type="MyObjectBuilder_ConveyorSorterDefinition">
@@ -122,6 +123,7 @@
         <Z>1.5</Z>
       </InventorySize>
       <Description>Wireless conveyor sorter to any container on the same grid or connected grids (via antenna). Requires 500 KW of power.</Description>
+      <PCU>200</PCU>
     </Definition>
 	
   </CubeBlocks>

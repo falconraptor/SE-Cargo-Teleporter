@@ -13,5 +13,27 @@
 		<string>ConveyorSorter/SmallBlockMediumSorterTeleport</string>
       </ItemIds>
     </Category>
+    <Category xsi:type="MyObjectBuilder_GuiBlockCategoryDefinition">
+      <Id>
+        <TypeId>GuiBlockCategoryDefinition</TypeId>
+        <SubtypeId/>
+      </Id>
+      <DisplayName>DisplayName_Category_LargeBlocks</DisplayName>
+      <Name>LargeBlocks</Name>
+      <ItemIds>
+        <string>ConveyorSorter/LargeBlockSmallSorterTeleport</string>
+      </ItemIds>
+    </Category>
+    <Category xsi:type="MyObjectBuilder_GuiBlockCategoryDefinition">
+      <Id>
+        <TypeId>GuiBlockCategoryDefinition</TypeId>
+        <SubtypeId/>
+      </Id>
+      <DisplayName>DisplayName_Category_SmallBlocks</DisplayName>
+      <Name>SmallBlocks</Name>
+      <ItemIds>
+        <string>ConveyorSorter/SmallBlockMediumSorterTeleport</string>
+      </ItemIds>
+    </Category>
   </CategoryClasses>
 </Definitions>

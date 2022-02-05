@@ -258,7 +258,7 @@ namespace CargoTeleporter
             while (target == null && gridsToProcess.Count > 0)
             {
                 var processing = gridsToProcess.Pop();
-                // Write("Processing Grid: " + processing.DisplayName);
+                Write("Processing Grid: " + processing.DisplayName);
                 
                 var fatBlocks = new List<IMySlimBlock>();
                 processing.GetBlocks(fatBlocks, x => x?.FatBlock != null);
