@@ -8,45 +8,51 @@ namespace CargoTeleporter
     {
 
         //Faction
-        public static string GetFaction(IMyCubeGrid processing)
+        public static string GetFaction(IMyCubeGrid grid)
         {
-            List<IMySlimBlock> blocks = new List<IMySlimBlock>();
-            processing.GetBlocks(blocks, x => x?.FatBlock != null);
-            return blocks.First().FatBlock.GetOwnerFactionTag();
+            var blocks = grid.GetFatBlocks<IMyCubeBlock>();
+            return blocks.First().GetOwnerFactionTag();
         }
 
-        public static bool isSameFaction(IMyCubeBlock blockA, IMyCubeBlock blockB)
+        public static bool IsSameFaction(IMyCubeBlock blockA, IMyCubeBlock blockB)
         {
             return blockA.GetOwnerFactionTag() == blockB.GetOwnerFactionTag();
         }
 
-        public static bool isSameFaction(IMyCubeGrid processing, IMyCubeBlock blockB)
+        public static bool IsSameFaction(IMyCubeGrid gridA, IMyCubeBlock blockB)
         {
-            List<IMySlimBlock> blocks = new List<IMySlimBlock>();
-            processing.GetBlocks(blocks, x => x?.FatBlock != null);
-            return blocks.Count(x => isSameFaction(x.FatBlock, blockB)) / blocks.Count > .5;
+            return GetFaction(gridA) == blockB.GetOwnerFactionTag();
+        }
+        
+        public static bool IsSameFaction(IMyCubeGrid gridA, IMyCubeGrid gridB)
+        {
+            return GetFaction(gridA) == GetFaction(gridB);
         }
 
         //Ownership
-
-        public static bool isSameOwner(IMyCubeBlock blockA, IMyCubeBlock blockB)
+        public static bool IsSameOwner(IMyCubeBlock blockA, IMyCubeBlock blockB)
         {
             return blockA.OwnerId == blockB.OwnerId;
         }
 
-        public static bool isSameOwner(long playerID, IMyCubeBlock blockB)
+        public static bool IsSameOwner(long playerID, IMyCubeBlock blockB)
         {
             return playerID == blockB.OwnerId;
         }
 
-        public static bool isSameFactionOrOwner(IMyCubeBlock blockA, IMyCubeBlock blockB)
+        public static bool IsSameFactionOrOwner(IMyCubeBlock blockA, IMyCubeBlock blockB)
         {
-            return isSameOwner(blockA, blockB) || isSameFaction(blockA, blockB);
+            return IsSameOwner(blockA, blockB) || IsSameFaction(blockA, blockB);
         }
 
-        internal static bool isSameFactionOrOwner(IMyCubeGrid gridA, IMyCubeBlock blockB)
+        internal static bool IsSameFactionOrOwner(IMyCubeGrid gridA, IMyCubeBlock blockB)
         {
-            return isSameFaction(gridA, blockB) || gridA.BigOwners.Any(x => isSameOwner(x, blockB));
+            return IsSameFaction(gridA, blockB) || gridA.BigOwners.Any(x => IsSameOwner(x, blockB));
+        }
+        
+        internal static bool IsSameFactionOrOwner(IMyCubeGrid gridA, IMyCubeGrid gridB)
+        {
+            return IsSameFaction(gridA, gridB) || gridA.BigOwners.Any(x => gridB.BigOwners.Contains(x));
         }
     }
 }

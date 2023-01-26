@@ -6,7 +6,6 @@ using Sandbox.Common.ObjectBuilders;
 using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
 using Sandbox.ModAPI.Ingame;
-using VRage.Game;
 using VRage.Game.Components;
 using VRage.Game.ModAPI;
 using VRage.ModAPI;
@@ -27,6 +26,10 @@ namespace CargoTeleporter
         private IMyInventory _inventory;
         private MyObjectBuilder_EntityBase _objectBuilder;
         private string _status;
+        private string _targetBlockName;
+        private string _targetGridName = "";
+        private bool _sending;
+        private string _oldName = "";
 
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
         {
@@ -37,6 +40,7 @@ namespace CargoTeleporter
             _cargoTeleporter = Entity as MyCubeBlock;
             base.Init(objectBuilder);
             (_cargoTeleporter as IMyTerminalBlock).AppendingCustomInfo += AppendingCustomInfo;
+            (_cargoTeleporter as IMyTerminalBlock).CustomNameChanged += CustomNameChange;
         }
 
         public override MyObjectBuilder_EntityBase GetObjectBuilder(bool copy = false)
@@ -62,37 +66,30 @@ namespace CargoTeleporter
                     return;
                 }
                 
-                Write("MainRun");
-
-                var name = "";
-                var gridName = "";
-                var toMode = true;
-                ParseName(ref name, ref gridName, ref toMode);
+                ParseName();
                 
-                if (name.Length < 2)
-                {
-                    Write("Name too small");
-                    UpdateStatus("Status: No filters\n\nPlease add [T:Block Name] or [F:Block Name].\nPlease add [G:Grid Name] if using antennas.");
-                    return;
-                }
-                    
+                if (_targetBlockName == "") return;
+                
                 if (_inventory == null) _inventory = _cargoTeleporter.GetInventory();
-                if (toMode && _inventory.Empty())
+                if (_sending && _inventory.Empty())
                 {
                     UpdateStatus("Status: Source Empty");
                     return;
                 }
-                    
-                Write("GetBlocks");
-                var cubeBlocks = _cargoTeleporter.CubeGrid.GetFatBlocks();
-
+                
                 //We use true, if it goes through the ref; (which I treat like an out) it will be changed.
                 //If it goes through the linq; then we are unchanged and true is the correct value. (we have found the grid, it is this one)
                 bool gridFound = true;
-                var target = gridName.Length > 2 && gridName != _cargoTeleporter.CubeGrid.Name ? 
-                    GetTarget(gridName, name, _cargoTeleporter.CubeGrid, ref gridFound) : 
-                    cubeBlocks.First(x => x?.DisplayNameText == name && OwnershipUtils.isSameFactionOrOwner(_cargoTeleporter, x));
-
+                IMyEntity targetBlock;
+                if (_targetGridName.Length > 2 && _targetGridName != _cargoTeleporter.CubeGrid.Name)
+                {
+                    targetBlock = GetTarget(ref gridFound);
+                }
+                else
+                {
+                    var cubeBlocks = _cargoTeleporter.CubeGrid.GetFatBlocks();
+                    targetBlock = cubeBlocks.First(x => x?.DisplayNameText == _targetBlockName && OwnershipUtils.IsSameFactionOrOwner(_cargoTeleporter, x));
+                }
 
                 var disonnectedStatus = "Status: Disconnected";
                 //If grid not found, 
@@ -101,32 +98,32 @@ namespace CargoTeleporter
                     Write("Grid Not Found");
                 }
                 disonnectedStatus += $"\nGrid: {(gridFound ? "" : "Not ")}Found";
-                if (target == null)
+                if (targetBlock == null)
                 {
                     Write("Target Not Found");
                 }
                 //This message should only ever say T/S Not Found, but in case I flubbed it; it can say found
-                disonnectedStatus += $"\n{(toMode ? "Target" : "Source")}: {(target != null ? "" : "Not ")}Found";
+                disonnectedStatus += $"\n{(_sending ? "Target" : "Source")}: {(targetBlock != null ? "" : "Not ")}Found";
 
-                if (target == null || !gridFound)
-				{
+                if (targetBlock == null || !gridFound)
+                {
                     UpdateStatus(disonnectedStatus);
                     return;
-				}
-
-                var targetInventory = target.GetInventory();
+                }
+                
+                var targetInventory = targetBlock.GetInventory();
                 var status = "Status: Connected\nTarget: ";
                 var targetStatus = targetInventory.IsFull ? "Full" : targetInventory.Empty() ? "Empty" : "Some";
                 var inventoryStatus = _inventory.IsFull ? "Full" : _inventory.Empty() ? "Empty" : "Some";
-                status += toMode ? targetStatus : inventoryStatus;
+                status += _sending ? targetStatus : inventoryStatus;
                 status += "\nSource: ";
-                status += !toMode ? targetStatus : inventoryStatus;
+                status += !_sending ? targetStatus : inventoryStatus;
 
                 UpdateStatus(status);
                 
-                if (!targetInventory.IsFull && toMode)
+                if (!targetInventory.IsFull && _sending)
                     targetInventory.TransferItemFrom(_inventory, 0, null, true, null, false);
-                else if (!targetInventory.Empty() && !_inventory.IsFull && !toMode)
+                else if (!targetInventory.Empty() && !_inventory.IsFull && !_sending)
                     _inventory.TransferItemFrom(targetInventory, 0, null, true, null, false);
             }
             catch (Exception ex)
@@ -141,25 +138,35 @@ namespace CargoTeleporter
             sb.Append(_status);
         }
 
+        private void CustomNameChange(IMyTerminalBlock block)
+        {
+            if (!ParseName()) return;
+            
+            if (_targetBlockName.Length < 2)
+            {
+                Write("Name too small");
+                UpdateStatus("Status: No filters\n\nPlease add [T:Block Name] or [F:Block Name].\nPlease add [G:Grid Name] if using antennas.");
+                return;
+            }
+        }
+
         private void UpdateStatus(string status)
         {
             if (status == _status) return;
             _status = status;
             (_cargoTeleporter as IMyTerminalBlock).RefreshCustomInfo();
-            if (_cargoTeleporter.IDModule == null) return;
-            var share = _cargoTeleporter.IDModule.ShareMode;
-            _cargoTeleporter.ChangeOwner(_cargoTeleporter.OwnerId, share == MyOwnershipShareModeEnum.None ? MyOwnershipShareModeEnum.Faction : MyOwnershipShareModeEnum.None);
-            _cargoTeleporter.ChangeOwner(_cargoTeleporter.OwnerId, share);
         }
 
         private void Write(string v)
         {
-            if (Config.enableDebug) Logging.WriteLine(v);
+            if (Config.enableDebug) Logging.WriteLine(_cargoTeleporter.CubeGrid.DisplayName + " - " + _cargoTeleporter.DisplayNameText + ": " + v);
         }
 
-        private void ParseName(ref string name, ref string gridName, ref bool toMode)
+        private bool ParseName()
         {
             var displayName = _cargoTeleporter.DisplayNameText;
+            if (displayName == _oldName) return false;
+
             //For ease of reading
             const int NotFound = -1;
             const char StartBracket = '[';
@@ -172,12 +179,13 @@ namespace CargoTeleporter
             const char GlobalMode = 'G';
             const char GlobalModeLower = 'g';
 
-
+            _targetBlockName = "";
+            _targetGridName = "";
 
             var workingIndex = 0;
             while (true)
             {
-                if (workingIndex > displayName.Length)
+                if (workingIndex >= displayName.Length)
                 {
                     Write("Parsing Name - End Of String");
                     break;
@@ -199,7 +207,7 @@ namespace CargoTeleporter
                 var delimiter = displayName.IndexOf(ModeDelimiter, start, stop - start);
                 if (delimiter == NotFound)
                 {
-                    workingIndex = stop + 1; //We jump to stop instead of start because the delimeter does not exist; not because it is invalid
+                    workingIndex = stop + 1; //We jump to stop instead of start because the delimiter does not exist; not because it is invalid
                     Write("Parsing Name - Missing ':' in [] pair");
                     continue;
                 }
@@ -219,7 +227,7 @@ namespace CargoTeleporter
                 {
                     //Mode is invalid, advance start and resume search
                     workingIndex = start + 1;
-                    Write($"Parsing Name - '{modePart}' is not 1 charachter.");
+                    Write($"Parsing Name - '{modePart}' is not 1 character.");
                     continue;
                 }
                 var modeChar = modePart[0];
@@ -227,66 +235,80 @@ namespace CargoTeleporter
                 {
                     case ToMode:
                     case ToModeLower:
-                        name = namePart;
-                        toMode = true;
+                        _targetBlockName = namePart;
+                        _sending = true;
                         break;
                     case FromMode:
                     case FromModeLower:
-                        name = namePart;
-                        toMode = false;
+                        _targetBlockName = namePart;
+                        _sending = false;
                         break;
                     case GlobalMode:
                     case GlobalModeLower:
-                        gridName = namePart;
+                        _targetGridName = namePart;
                         break;
                     default:
                         //Mode is invalid char, advance start and resume search
                         workingIndex = start + 1;
-                        Write($"Parsing Name - '{modePart}' is not a valid charachter.");
+                        Write($"Parsing Name - '{modePart}' is not a valid character.");
                         continue;
                 }
                 workingIndex = stop + 1;
 
+                if (_targetBlockName != "" && _targetGridName != "") break;
             }
-            Write(displayName + ": "+ gridName + ", " + name + ", " + toMode.ToString());
+            Write("Parsed: " + _targetGridName + ", " + _targetBlockName + ", " + _sending);
+            _oldName = displayName;
+            return true;
         }
 
-        private IMyEntity GetTarget(string gridName, string name, IMyCubeGrid startingGrid, ref bool foundGrid)
+        private IMyEntity GetTarget(ref bool foundGrid)
         {
+            Write("Looking for [" + _targetGridName + "] " + _targetBlockName);
+            
             var gridsToProcess = new List<IMyCubeGrid>();
             var gridsProcessed = new HashSet<IMyCubeGrid>();
             IMyEntity target = null;
             foundGrid = false;
             
-            gridsToProcess.Add(startingGrid);
+            gridsToProcess.Add(_cargoTeleporter.CubeGrid);
 
             while (target == null && gridsToProcess.Count > 0)
             {
                 var processing = gridsToProcess.Pop();
-                Write("Processing Grid: " + processing.DisplayName);
+                if (gridsProcessed.Contains(processing)) continue;
+                Write("Processing Grid: \"" + processing.DisplayName + "\"");
                 
-                var fatBlocks = new List<IMySlimBlock>();
-                processing.GetBlocks(fatBlocks, x => x?.FatBlock != null);
-                var gridBlocks = fatBlocks.ConvertAll(x => x.FatBlock);
+                var gridBlocks = processing.GetFatBlocks<IMyCubeBlock>().ToArray();
 
-                if (processing.DisplayName == gridName)
+                if (processing.DisplayName == _targetGridName)
                 {
-                    
-                    target = gridBlocks.First(x => x?.DisplayNameText == name);
-                    foundGrid = true;
-                    break;
+                    try
+                    {
+                        target = gridBlocks.First(x => x?.DisplayNameText == _targetBlockName);
+                        foundGrid = true;
+                        break;
+                    }
+                    catch (InvalidOperationException e)
+                    {
+                        Write(e.ToString());
+                    }
                 }
                 
-                foreach (var antenna in gridBlocks.Where(x => x is IMyRadioAntenna && OwnershipUtils.isSameFactionOrOwner(processing, x)).Cast<IMyRadioAntenna>())
+                foreach (var antenna in gridBlocks.Where(x => x is IMyRadioAntenna && OwnershipUtils.IsSameFactionOrOwner(processing, x)).Cast<IMyRadioAntenna>().Where(x => x.Enabled && x.IsFunctional && x.IsBroadcasting))
                 {
                     var sphere = new BoundingSphereD(antenna.GetPosition(), antenna.Radius);
-                    gridsToProcess.AddRange(MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).Cast<IMyCubeGrid>().Where(x => !gridsProcessed.Contains(x) && !gridsToProcess.Contains(x)));
+                    var toCheck = MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).Cast<IMyCubeGrid>().Where(x => !gridsProcessed.Contains(x) && !gridsToProcess.Contains(x) && OwnershipUtils.IsSameFactionOrOwner(processing, x)).ToArray();
+                    if (toCheck.Length != 0) Write("Found grids to check: " + string.Join(", ", toCheck.Select(x => "\"" + x.DisplayName + "\"")));
+                    gridsToProcess.AddRange(toCheck);
                 }
 
-                foreach (var antenna in gridBlocks.Where(x => x is IMyLaserAntenna && OwnershipUtils.isSameFactionOrOwner(processing, x)).Cast<IMyLaserAntenna>().Where(x => x.Status == MyLaserAntennaStatus.Connected))
+                foreach (var antenna in gridBlocks.Where(x => x is IMyLaserAntenna && OwnershipUtils.IsSameFactionOrOwner(processing, x)).Cast<IMyLaserAntenna>().Where(x => x.Status == MyLaserAntennaStatus.Connected))
                 {
                     var sphere = new BoundingSphereD(antenna.TargetCoords, 1);
-                    gridsToProcess.AddRange(MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).Cast<IMyCubeGrid>().Where(x => !gridsProcessed.Contains(x) && !gridsToProcess.Contains(x)));
+                    var toCheck = MyAPIGateway.Entities.GetEntitiesInSphere(ref sphere).Where(x => x is IMyCubeGrid).Cast<IMyCubeGrid>().Where(x => !gridsProcessed.Contains(x) && !gridsToProcess.Contains(x) && OwnershipUtils.IsSameFactionOrOwner(processing, x)).ToArray();
+                    if (toCheck.Length != 0) Write("Found grids to check: " + string.Join(", ", toCheck.Select(x => "\"" + x.DisplayName + "\"")));
+                    gridsToProcess.AddRange(toCheck);
                 }
 
                 gridsProcessed.Add(processing);
