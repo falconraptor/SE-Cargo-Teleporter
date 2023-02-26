@@ -11,7 +11,7 @@ namespace CargoTeleporter
         public static string GetFaction(IMyCubeGrid grid)
         {
             var blocks = grid.GetFatBlocks<IMyCubeBlock>();
-            return blocks.First().GetOwnerFactionTag();
+            return !blocks.Any() ? "" : blocks.First().GetOwnerFactionTag();
         }
 
         public static bool IsSameFaction(IMyCubeBlock blockA, IMyCubeBlock blockB)
